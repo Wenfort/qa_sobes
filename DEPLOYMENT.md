@@ -1,125 +1,163 @@
-# Инструкция по развертыванию QA Sobes на Ubuntu с доменом qa-interview.ru
+# Деплой QA Sobes на голую Ubuntu (без Docker)
 
-## 1. Подготовка сервера
+Ручная установка и настройка всех компонентов на чистую Ubuntu.
+
+## 1. Подготовка голого сервера Ubuntu
 
 ```bash
+# Подключаемся к серверу
+ssh root@your-server-ip
+
 # Обновляем систему
-sudo apt update && sudo apt upgrade -y
+apt update && apt upgrade -y
 
-# Устанавливаем необходимые пакеты
-sudo apt install -y curl git nginx certbot python3-certbot-nginx
+# Устанавливаем необходимые базовые пакеты
+apt install -y curl git ufw nginx software-properties-common
+```
 
-# Устанавливаем Node.js (версия 18)
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt install -y nodejs
+## 2. Установка Python 3.11+
 
-# Устанавливаем Python и pip
-sudo apt install -y python3 python3-pip python3-venv
+```bash
+# Добавляем PPA для свежих версий Python
+add-apt-repository ppa:deadsnakes/ppa -y
+apt update
+
+# Устанавливаем Python 3.11 и pip
+apt install -y python3.11 python3.11-venv python3.11-dev python3-pip
+
+# Проверяем версию
+python3.11 --version
+
+# Создаем симлинк для удобства
+ln -sf /usr/bin/python3.11 /usr/local/bin/python3
+```
+
+## 3. Установка Node.js 18+
+
+```bash
+# Устанавливаем Node.js через NodeSource
+curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+apt install -y nodejs
 
 # Проверяем версии
 node --version
 npm --version
-python3 --version
 ```
 
-## 2. Клонируем и настраиваем проект
+## 4. Настройка файрвола
 
 ```bash
-# Переходим в директорию веб-сервера
-cd /var/www
+# Включаем файрвол
+ufw --force enable
 
+# Разрешаем SSH, HTTP и HTTPS
+ufw allow ssh
+ufw allow 80
+ufw allow 443
+
+# Проверяем статус
+ufw status
+```
+
+## 5. Клонирование и настройка проекта
+
+```bash
 # Клонируем проект
-sudo git clone https://github.com/Wenfort/qa_sobes.git
-sudo chown -R $USER:$USER qa_sobes
+git clone https://github.com/Wenfort/qa_sobes.git
 cd qa_sobes
 ```
 
-## 3. Настраиваем Backend (FastAPI)
+## 6. Настройка Backend (FastAPI)
 
 ```bash
 # Переходим в папку backend
 cd backend
 
 # Создаем виртуальное окружение
-python3 -m venv venv
+python3.11 -m venv venv
+
+# Активируем виртуальное окружение
 source venv/bin/activate
 
 # Устанавливаем зависимости
-pip install fastapi uvicorn python-multipart
+pip install --upgrade pip
+pip install -r requirements.txt
 
 # Создаем systemd сервис для backend
-sudo tee /etc/systemd/system/qa-backend.service > /dev/null << EOF
+cat > /etc/systemd/system/qa-backend.service << 'EOF'
 [Unit]
 Description=QA Sobes Backend
 After=network.target
 
 [Service]
 Type=simple
-User=$USER
-WorkingDirectory=/var/www/qa_sobes/backend
-Environment=PATH=/var/www/qa_sobes/backend/venv/bin
-ExecStart=/var/www/qa_sobes/backend/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+User=root
+WorkingDirectory=/root/qa_sobes/backend
+Environment=PATH=/root/qa_sobes/backend/venv/bin
+ExecStart=/root/qa_sobes/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
 Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Запускаем и включаем сервис
-sudo systemctl daemon-reload
-sudo systemctl enable qa-backend
-sudo systemctl start qa-backend
+# Перезагружаем systemd и запускаем сервис
+systemctl daemon-reload
+systemctl enable qa-backend
+systemctl start qa-backend
 
 # Проверяем статус
-sudo systemctl status qa-backend
+systemctl status qa-backend
+
+cd ..
 ```
 
-## 4. Настраиваем Frontend (React)
+## 7. Настройка Frontend (Node.js/Vite)
 
 ```bash
 # Переходим в папку frontend
-cd /var/www/qa_sobes/frontend
+cd frontend
 
 # Устанавливаем зависимости
 npm install
 
-# Собираем продакшн версию
+# Собираем проект
 npm run build
 
-# Проверяем, что папка build создалась
-ls -la build/
+cd ..
 ```
 
-## 5. Настраиваем Nginx
+## 8. Настройка Nginx
 
 ```bash
 # Создаем конфигурацию для сайта
-sudo tee /etc/nginx/sites-available/qa-interview.ru > /dev/null << 'EOF'
+cat > /etc/nginx/sites-available/qa-sobes << 'EOF'
 server {
     listen 80;
     server_name qa-interview.ru www.qa-interview.ru;
 
-    # Frontend (React)
-    root /var/www/qa_sobes/frontend/build;
+    # Frontend статика
+    root /root/qa_sobes/frontend/dist;
     index index.html;
 
-    # Обслуживание статических файлов React
+    # Обслуживание статических файлов
     location / {
         try_files $uri $uri/ /index.html;
     }
 
-    # Проксирование API запросов на backend
+    # Проксирование API запросов к backend
     location /api/ {
-        proxy_pass http://127.0.0.1:8000/;
+        proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Проксирование example routes на backend
+    # Обслуживание примеров
     location /example/ {
-        proxy_pass http://127.0.0.1:8000/example/;
+        proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -129,112 +167,165 @@ server {
 EOF
 
 # Включаем сайт
-sudo ln -s /etc/nginx/sites-available/qa-interview.ru /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/qa-sobes /etc/nginx/sites-enabled/
 
-# Удаляем дефолтный сайт
-sudo rm -f /etc/nginx/sites-enabled/default
+# Удаляем дефолтный сайт если есть
+rm -f /etc/nginx/sites-enabled/default
 
 # Проверяем конфигурацию nginx
-sudo nginx -t
+nginx -t
 
-# Перезапускаем nginx
-sudo systemctl restart nginx
+# Перезагружаем nginx
+systemctl restart nginx
+systemctl enable nginx
 ```
 
-## 6. Настраиваем SSL с Let's Encrypt
+🎉 **Готово!** Сайт уже работает на `http://ваш-домен`
+
+## 9. Настройка SSL (Let's Encrypt)
 
 ```bash
+# Устанавливаем certbot
+apt install -y certbot python3-certbot-nginx
+
 # Получаем SSL сертификат
-sudo certbot --nginx -d qa-interview.ru -d www.qa-interview.ru
+certbot --nginx -d qa-interview.ru -d www.qa-interview.ru
 
 # Проверяем автообновление сертификата
-sudo certbot renew --dry-run
+certbot renew --dry-run
 ```
 
-## 7. Настраиваем файрвол (опционально)
+🔒 **SSL готов!** Сайт работает на `https://qa-interview.ru`
+
+## 10. Обновление проекта
 
 ```bash
-# Включаем UFW
-sudo ufw enable
+# Заходим в папку проекта
+cd qa_sobes
 
-# Разрешаем SSH, HTTP и HTTPS
-sudo ufw allow ssh
-sudo ufw allow 'Nginx Full'
+# Забираем изменения из GitHub
+git pull
 
-# Проверяем статус
-sudo ufw status
+# Обновляем backend
+cd backend
+source venv/bin/activate
+pip install -r requirements.txt
+systemctl restart qa-backend
+cd ..
+
+# Обновляем frontend
+cd frontend
+npm install
+npm run build
+cd ..
+
+# Перезагружаем nginx
+systemctl reload nginx
 ```
 
-## 8. Обновляем Frontend для продакшена
+## 11. Полезные команды
 
-Отредактируйте файл `/var/www/qa_sobes/frontend/src/App.js`:
-
-```javascript
-// Измените эту строку
-const API_BASE = process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:8000';
-
-// На эту (для работы с example routes)
-const API_BASE = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000';
-```
-
-Пересоберите frontend:
 ```bash
-cd /var/www/qa_sobes/frontend
+# Проверить статус backend
+systemctl status qa-backend
+
+# Посмотреть логи backend
+journalctl -u qa-backend -f
+
+# Проверить статус nginx
+systemctl status nginx
+
+# Посмотреть логи nginx
+tail -f /var/log/nginx/access.log
+tail -f /var/log/nginx/error.log
+
+# Проверка работоспособности
+curl -I http://localhost
+curl -I http://localhost/example/1
+```
+
+## 12. Мониторинг
+
+```bash
+# Проверка использования ресурсов
+htop
+
+# Проверка портов
+netstat -tlnp | grep :80
+netstat -tlnp | grep :8000
+
+# Проверка процессов
+ps aux | grep uvicorn
+ps aux | grep nginx
+```
+
+## Структура проекта
+
+```
+qa_sobes/
+├── backend/
+│   ├── venv/              # Виртуальное окружение Python
+│   ├── main.py            # FastAPI приложение
+│   └── requirements.txt   # Python зависимости
+├── frontend/
+│   ├── dist/              # Собранная статика
+│   ├── node_modules/      # Node.js модули
+│   └── package.json       # Node.js зависимости
+└── DEPLOYMENT.md          # Эта инструкция
+```
+
+## 13. Решение проблем
+
+### Если backend не запускается:
+
+```bash
+# Проверяем логи
+journalctl -u qa-backend -n 50
+
+# Проверяем что Python и зависимости установлены
+cd /root/qa_sobes/backend
+source venv/bin/activate
+python3 -c "import fastapi; print('FastAPI OK')"
+
+# Перезапускаем сервис
+systemctl restart qa-backend
+```
+
+### Если frontend не собирается:
+
+```bash
+cd /root/qa_sobes/frontend
+
+# Очищаем кеш и переустанавливаем зависимости
+rm -rf node_modules package-lock.json
+npm install
 npm run build
 ```
 
-## 9. Проверка работы
+### Если nginx выдает ошибки:
 
 ```bash
-# Проверяем статус сервисов
-sudo systemctl status qa-backend
-sudo systemctl status nginx
+# Проверяем конфигурацию
+nginx -t
 
-# Проверяем логи backend
-sudo journalctl -u qa-backend -f
+# Проверяем что файлы существуют
+ls -la /root/qa_sobes/frontend/dist/
+ls -la /etc/nginx/sites-enabled/
 
-# Проверяем логи nginx
-sudo tail -f /var/log/nginx/error.log
-sudo tail -f /var/log/nginx/access.log
+# Проверяем права доступа
+chmod 755 /root/qa_sobes/frontend/dist/
 ```
 
-## 10. Полезные команды для управления
+## Итоговые адреса страниц
 
-```bash
-# Перезапуск backend
-sudo systemctl restart qa-backend
-
-# Обновление кода
-cd /var/www/qa_sobes
-sudo git pull
-cd frontend && npm run build
-sudo systemctl restart qa-backend
-
-# Просмотр логов
-sudo journalctl -u qa-backend -n 50
-```
-
-## Структура проекта на сервере:
-
-```
-/var/www/qa_sobes/
-├── backend/
-│   ├── venv/
-│   ├── main.py
-│   └── ...
-└── frontend/
-    ├── build/          # Собранные файлы React
-    ├── src/
-    └── ...
-```
-
-## Итоговые адреса страниц:
-
-После выполнения всех шагов сайт будет доступен по адресу `https://qa-interview.ru` с рабочими страницами:
-- `https://qa-interview.ru/example/1` - Страница с ошибкой 403 и подсказкой
+После деплоя сайт доступен на:
+- `https://qa-interview.ru/example/1` - Ошибка 403 с подсказкой перейти на /example/2
 - `https://qa-interview.ru/example/2` - Листинг пород кошек с багом в пагинации
-- `https://qa-interview.ru/example/3` - Поиск товаров с багами в поиске
+- `https://qa-interview.ru/example/3` - Поиск товаров с множественными багами
 - `https://qa-interview.ru/example/4` - Форма создания тикета
 
-## Репозиторий проекта:
-https://github.com/Wenfort/qa_sobes
+**Репозиторий:** https://github.com/Wenfort/qa_sobes
+
+---
+
+*Время деплоя: ~20-30 минут ручной настройки*

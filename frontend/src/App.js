@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const API_BASE = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000';
+const API_BASE = process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:8000';
 
 function Example1() {
   const [data, setData] = useState([]);
