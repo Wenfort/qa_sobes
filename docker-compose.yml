@@ -1,30 +1,27 @@
 version: '3.8'
 
 services:
-  backend:
-    build: ./backend
-    ports:
-      - "8000:8000"
-    environment:
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./backend:/app
+  qa-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: qa-backend
+    restart: unless-stopped
     networks:
       - qa-network
 
-  frontend:
-    build: ./frontend
+  qa-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: qa-frontend
+    restart: unless-stopped
     ports:
-      - "3000:3000"
-    environment:
-      - REACT_APP_API_URL=http://localhost:8000
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - "80:80"
+    depends_on:
+      - qa-backend
     networks:
       - qa-network
-    depends_on:
-      - backend
 
 networks:
   qa-network:
