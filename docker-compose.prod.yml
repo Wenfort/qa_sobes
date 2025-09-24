@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  qa-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: qa-backend
+    restart: unless-stopped
+    networks:
+      - qa-network
+
+  qa-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: qa-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - qa-backend
+    networks:
+      - qa-network
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./nginx-ssl.conf:/etc/nginx/nginx.conf:ro
+
+networks:
+  qa-network:
+    driver: bridge
