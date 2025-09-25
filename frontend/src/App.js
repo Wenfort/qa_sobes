@@ -219,6 +219,276 @@ function Example3() {
   );
 }
 
+function Example5() {
+  const [documents, setDocuments] = useState([]);
+  const [searchKey, setSearchKey] = useState('');
+  const [searchValue, setSearchValue] = useState('');
+  const [searchResult, setSearchResult] = useState([]);
+  const [mongoQuery, setMongoQuery] = useState('');
+  const [mongoError, setMongoError] = useState('');
+
+  useEffect(() => {
+    fetchDocument();
+  }, []);
+
+  const fetchDocument = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/example/5`);
+      if (!response.ok) {
+        setDocuments([]);
+        return;
+      }
+      const result = await response.json();
+      setDocuments(result);
+      setSearchResult(result);
+    } catch (error) {
+      console.error('Error fetching documents:', error);
+      setDocuments([]);
+    }
+  };
+
+
+  const executeSearch = (e) => {
+    e.preventDefault();
+
+    if (!searchKey.trim() || !searchValue.trim()) {
+      setSearchResult(documents);
+      return;
+    }
+
+    try {
+      const path = searchKey.trim().split('.');
+      const filteredDocuments = documents.filter(doc => {
+        let value = doc;
+
+        for (const key of path) {
+          if (value === null || value === undefined || typeof value !== 'object' || !(key in value)) {
+            return false;
+          }
+          value = value[key];
+        }
+
+        return String(value) === searchValue.trim();
+      });
+
+      setSearchResult(filteredDocuments);
+      setMongoQuery('');
+      setMongoError('');
+    } catch (error) {
+      setSearchResult([]);
+    }
+  };
+
+  const executeMongoQuery = (e) => {
+    e.preventDefault();
+    setMongoError('');
+
+    if (!mongoQuery.trim()) {
+      setSearchResult(documents);
+      return;
+    }
+
+    try {
+      let query = JSON.parse(mongoQuery);
+
+      // Если запрос является массивом (aggregation pipeline), берем первый элемент
+      if (Array.isArray(query) && query.length > 0) {
+        query = query[0];
+      }
+
+      const filteredDocuments = documents.filter(doc => {
+        return matchesQuery(doc, query);
+      });
+
+      setSearchResult(filteredDocuments);
+      setSearchKey('');
+      setSearchValue('');
+    } catch (error) {
+      setMongoError(`Ошибка парсинга JSON: ${error.message}`);
+    }
+  };
+
+  const matchesQuery = (doc, query) => {
+    for (const [path, condition] of Object.entries(query)) {
+      const value = getValueByPath(doc, path);
+
+      if (!matchesCondition(value, condition)) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const getValueByPath = (obj, path) => {
+    const keys = path.split('.');
+    let value = obj;
+
+    for (const key of keys) {
+      if (value === null || value === undefined || typeof value !== 'object' || !(key in value)) {
+        return undefined;
+      }
+      value = value[key];
+    }
+
+    return value;
+  };
+
+  const matchesCondition = (value, condition) => {
+    if (typeof condition !== 'object' || condition === null) {
+      return value === condition;
+    }
+
+    for (const [operator, operand] of Object.entries(condition)) {
+      switch (operator) {
+        case '$gte':
+          return Number(value) >= Number(operand);
+        case '$lte':
+          return Number(value) <= Number(operand);
+        case '$gt':
+          return Number(value) > Number(operand);
+        case '$lt':
+          return Number(value) < Number(operand);
+        case '$eq':
+          return value === operand;
+        case '$ne':
+          return value !== operand;
+        default:
+          return false;
+      }
+    }
+
+    return false;
+  };
+
+  return (
+    <div className="container">
+      <div className="header">
+        <h1>MongoDB</h1>
+      </div>
+
+      <div>
+        <div style={{display: 'flex', gap: '40px', marginBottom: '20px'}}>
+          <div style={{flex: '1'}}>
+            <form onSubmit={executeSearch}>
+              <div>
+                <label style={{display: 'block', marginBottom: '5px', fontWeight: 'bold'}}>
+                  Поиск по ключу и значению:
+                </label>
+                <div style={{display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px'}}>
+                  <input
+                    type="text"
+                    value={searchKey}
+                    onChange={(e) => setSearchKey(e.target.value)}
+                    placeholder="ключ"
+                    style={{
+                      width: '150px',
+                      padding: '8px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px'
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={searchValue}
+                    onChange={(e) => setSearchValue(e.target.value)}
+                    placeholder="значение"
+                    style={{
+                      width: '150px',
+                      padding: '8px',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px'
+                    }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#28a745',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Поиск
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <div style={{flex: '1'}}>
+            <form onSubmit={executeMongoQuery}>
+              <div>
+                <label style={{display: 'block', marginBottom: '5px', fontWeight: 'bold'}}>
+                  MongoDB Query:
+                </label>
+                <textarea
+                  value={mongoQuery}
+                  onChange={(e) => setMongoQuery(e.target.value)}
+                  rows="3"
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    fontFamily: 'monospace',
+                    fontSize: '14px',
+                    marginBottom: '10px'
+                  }}
+                />
+                <button
+                  type="submit"
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#6f42c1',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Выполнить MongoDB Query
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {mongoError && (
+          <div style={{
+            marginBottom: '20px',
+            padding: '10px',
+            backgroundColor: '#f8d7da',
+            color: '#721c24',
+            border: '1px solid #f5c6cb',
+            borderRadius: '4px'
+          }}>
+            {mongoError}
+          </div>
+        )}
+
+
+        <h3>Результат поиска ({searchResult.length} документов):</h3>
+        {searchResult.length > 0 ? (
+          <div style={{
+            backgroundColor: '#f8f9fa',
+            padding: '20px',
+            borderRadius: '8px',
+            border: '1px solid #e9ecef',
+            fontFamily: 'monospace',
+            whiteSpace: 'pre-wrap'
+          }}>
+            <pre>{JSON.stringify(searchResult, null, 2)}</pre>
+          </div>
+        ) : (
+          <p>Документы не найдены</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Example4() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -361,6 +631,8 @@ function App() {
     return <Example3 />;
   } else if (path === '/example/4') {
     return <Example4 />;
+  } else if (path === '/example/5') {
+    return <Example5 />;
   } else {
     return <Example1 />;
   }

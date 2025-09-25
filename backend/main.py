@@ -98,6 +98,64 @@ async def create_ticket(title: str, description: str):
         "message": "Тикет успешно создан"
     }
 
+@app.get("/example/5")
+async def example_5():
+    mongo_documents = [
+        {
+            "_id": "64f3d8a9e12b8c001f123456",
+            "created_at": "2023-09-02T14:30:00Z",
+            "updated_at": "2023-09-02T14:30:00Z",
+            "fields": {
+                "client": {
+                    "inn": "7707083893",
+                    "company_name": "ООО 'Рога и Копыта'",
+                    "director": {
+                        "full_name": "Иванов Иван Иванович",
+                        "age": 45
+                    }
+                }
+            },
+            "status": "active",
+            "version": 1
+        },
+        {
+            "_id": "64f3d8a9e12b8c001f654321",
+            "created_at": "2023-09-03T10:15:00Z",
+            "updated_at": "2023-09-03T10:15:00Z",
+            "fields": {
+                "client": {
+                    "inn": "7707083893",
+                    "company_name": "ЗАО 'Технологии Будущего'",
+                    "director": {
+                        "full_name": "Петров Петр Петрович",
+                        "age": 52
+                    }
+                }
+            },
+            "status": "draft",
+            "version": 1
+        },
+        {
+            "_id": "64f3d8a9e12b8c001f987654",
+            "created_at": "2023-09-04T16:45:00Z",
+            "updated_at": "2023-09-04T16:45:00Z",
+            "fields": {
+                "client": {
+                    "inn": "5506789012",
+                    "company_name": "ИП Сидоров А.В.",
+                    "director": {
+                        "full_name": "Сидоров Александр Викторович",
+                        "age": 38
+                    }
+                }
+            },
+            "status": "inactive",
+            "version": 2
+        }
+    ]
+
+    return mongo_documents
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
